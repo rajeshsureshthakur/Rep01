@@ -1,0 +1,77 @@
+#include <iostream>
+#include <string>
+#include <vector>
+#include <algorithm>
+
+class LetterCaseCounter {
+private:
+    struct LetterInfo {
+        char letter;
+        int lowercaseCount;
+        int uppercaseCount;
+        LetterInfo(char l) : letter(l), lowercaseCount(0), uppercaseCount(0) {}
+    };
+
+    static bool compareLetterInfo(const LetterInfo& a, const LetterInfo& b) {
+        return a.letter < b.letter;
+    }
+
+public:
+    static int countDifferentLetters(const std::string& s) {
+        std::vector<LetterInfo> letterInfos;
+
+        // Count occurrences of each letter
+        for (char c : s) {
+            if (!std::isalpha(c)) continue;
+            
+            char lowercaseC = std::tolower(c);
+            auto it = std::find_if(letterInfos.begin(), letterInfos.end(),
+                [lowercaseC](const LetterInfo& li) { return li.letter == lowercaseC; });
+
+            if (it == letterInfos.end()) {
+                letterInfos.emplace_back(lowercaseC);
+                it = letterInfos.end() - 1;
+            }
+
+            if (std::islower(c)) {
+                it->lowercaseCount++;
+            } else {
+                it->uppercaseCount++;
+            }
+        }
+
+        // Sort letterInfos by letter
+        std::sort(letterInfos.begin(), letterInfos.end(), compareLetterInfo);
+
+        // Count letters that appear in both cases with lowercase before uppercase
+        int count = 0;
+        for (const auto& li : letterInfos) {
+            if (li.lowercaseCount > 0 && li.uppercaseCount > 0) {
+                bool isValid = true;
+                for (char c : s) {
+                    if (std::tolower(c) == li.letter) {
+                        if (std::isupper(c)) {
+                            isValid = false;
+                            break;
+                        }
+                    }
+                }
+                if (isValid) count++;
+            }
+        }
+
+        return count;
+    }
+};
+
+int main() {
+    std::string input;
+    std::cout << "Enter a string: ";
+    std::getline(std::cin, input);
+
+    int result = LetterCaseCounter::countDifferentLetters(input);
+    std::cout << "Number of different letters that appear in both uppercase and lowercase "
+              << "with all lowercase occurrences before any uppercase occurrences: " << result << std::endl;
+
+    return 0;
+}
