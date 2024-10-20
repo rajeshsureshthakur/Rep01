@@ -1,0 +1,94 @@
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.util.Base64;
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
+import javax.json.Json;
+import javax.json.JsonArray;
+import javax.json.JsonObject;
+import javax.json.JsonReader;
+
+public class JFrogLatestFileChecker {
+    private static final String ARTIFACTORY_URL = "https://your-instance.jfrog.io/artifactory";
+    private static final String REPO_NAME = "your-repo-name";
+    private static final String FOLDER_PATH = "path/to/your/folder";
+    private static final String USERNAME = "your-username";
+    private static final String API_KEY = "your-api-key";
+
+    public static void main(String[] args) {
+        try {
+            String apiUrl = ARTIFACTORY_URL + "/api/storage/" + REPO_NAME + "/" + FOLDER_PATH;
+            URL url = new URL(apiUrl);
+            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+            
+            // Set up basic authentication
+            String auth = USERNAME + ":" + API_KEY;
+            String encodedAuth = Base64.getEncoder().encodeToString(auth.getBytes());
+            conn.setRequestProperty("Authorization", "Basic " + encodedAuth);
+            
+            conn.setRequestMethod("GET");
+            
+            int responseCode = conn.getResponseCode();
+            if (responseCode == HttpURLConnection.HTTP_OK) {
+                try (JsonReader jsonReader = Json.createReader(conn.getInputStream())) {
+                    JsonObject jsonResponse = jsonReader.readObject();
+                    JsonArray children = jsonResponse.getJsonArray("children");
+                    
+                    String latestFile = "";
+                    long latestTimestamp = 0;
+                    
+                    for (int i = 0; i < children.size(); i++) {
+                        JsonObject child = children.getJsonObject(i);
+                        String uri = child.getString("uri");
+                        if (!child.getBoolean("folder")) {
+                            String fileUrl = ARTIFACTORY_URL + "/api/storage/" + REPO_NAME + FOLDER_PATH + uri;
+                            JsonObject fileInfo = getFileInfo(fileUrl);
+                            long lastModified = fileInfo.getJsonNumber("lastModified").longValue();
+                            if (lastModified > latestTimestamp) {
+                                latestTimestamp = lastModified;
+                                latestFile = uri;
+                            }
+                        }
+                    }
+                    
+                    if (!latestFile.isEmpty()) {
+                        System.out.println("Latest file: " + latestFile);
+                        System.out.println("Last modified: " + formatTimestamp(latestTimestamp));
+                    } else {
+                        System.out.println("No files found in the specified folder.");
+                    }
+                }
+            } else {
+                System.out.println("Failed to fetch repository contents. Response Code: " + responseCode);
+            }
+        } catch (Exception e) {
+            System.err.println("An error occurred: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+    
+    private static JsonObject getFileInfo(String fileUrl) throws Exception {
+        URL url = new URL(fileUrl);
+        HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+        
+        String auth = USERNAME + ":" + API_KEY;
+        String encodedAuth = Base64.getEncoder().encodeToString(auth.getBytes());
+        conn.setRequestProperty("Authorization", "Basic " + encodedAuth);
+        
+        conn.setRequestMethod("GET");
+        
+        try (JsonReader jsonReader = Json.createReader(conn.getInputStream())) {
+            return jsonReader.readObject();
+        }
+    }
+
+    private static String formatTimestamp(long timestamp) {
+        Instant instant = Instant.ofEpochMilli(timestamp);
+        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
+                                                      .withZone(ZoneId.systemDefault());
+        return formatter.format(instant);
+    }
+}
