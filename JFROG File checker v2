@@ -1,0 +1,91 @@
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.time.Duration;
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
+import java.util.Base64;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+public class JFrogLatestFileChecker {
+    private static final String ARTIFACTORY_URL = "https://your-instance.jfrog.io/artifactory";
+    private static final String REPO_NAME = "your-repo-name";
+    private static final String FOLDER_PATH = "path/to/your/folder";
+    private static final String USERNAME = "your-username";
+    private static final String API_KEY = "your-api-key";
+
+    private static final HttpClient httpClient = HttpClient.newBuilder()
+            .connectTimeout(Duration.ofSeconds(10))
+            .build();
+
+    public static void main(String[] args) {
+        try {
+            String apiUrl = ARTIFACTORY_URL + "/api/storage/" + REPO_NAME + "/" + FOLDER_PATH;
+            String response = sendGetRequest(apiUrl);
+
+            Pattern pattern = Pattern.compile("\"uri\":\"([^\"]+)\",\"folder\":(false)");
+            Matcher matcher = pattern.matcher(response);
+
+            String latestFile = "";
+            long latestTimestamp = 0;
+
+            while (matcher.find()) {
+                String uri = matcher.group(1);
+                String fileUrl = ARTIFACTORY_URL + "/api/storage/" + REPO_NAME + FOLDER_PATH + uri;
+                String fileInfoResponse = sendGetRequest(fileUrl);
+
+                Pattern timestampPattern = Pattern.compile("\"lastModified\":(\\d+)");
+                Matcher timestampMatcher = timestampPattern.matcher(fileInfoResponse);
+
+                if (timestampMatcher.find()) {
+                    long lastModified = Long.parseLong(timestampMatcher.group(1));
+                    if (lastModified > latestTimestamp) {
+                        latestTimestamp = lastModified;
+                        latestFile = uri;
+                    }
+                }
+            }
+
+            if (!latestFile.isEmpty()) {
+                System.out.println("Latest file: " + latestFile);
+                System.out.println("Last modified: " + formatTimestamp(latestTimestamp));
+            } else {
+                System.out.println("No files found in the specified folder.");
+            }
+
+        } catch (Exception e) {
+            System.err.println("An error occurred: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+
+    private static String sendGetRequest(String url) throws Exception {
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create(url))
+                .header("Authorization", "Basic " + getEncodedCredentials())
+                .GET()
+                .build();
+
+        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+
+        if (response.statusCode() != 200) {
+            throw new RuntimeException("HTTP error code: " + response.statusCode());
+        }
+
+        return response.body();
+    }
+
+    private static String getEncodedCredentials() {
+        return Base64.getEncoder().encodeToString((USERNAME + ":" + API_KEY).getBytes());
+    }
+
+    private static String formatTimestamp(long timestamp) {
+        Instant instant = Instant.ofEpochMilli(timestamp);
+        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
+                .withZone(ZoneId.systemDefault());
+        return formatter.format(instant);
+    }
+}
