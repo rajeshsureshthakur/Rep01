@@ -1,0 +1,168 @@
+import java.io.IOException;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+public class JFrogLatestFile {
+    public static String getLatestModifiedFileName(String repoUrl, String repoKey, String token) throws IOException, InterruptedException {
+        String apiUrl = repoUrl + "/api/storage/" + repoKey + "?list&deep=1&listFolders=0";
+        
+        HttpClient client = HttpClient.newHttpClient();
+        HttpRequest request = HttpRequest.newBuilder()
+            .uri(URI.create(apiUrl))
+            .header("Authorization", "Bearer " + token)
+            .build();
+
+        HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+
+        if (response.statusCode() != 200) {
+            return "Error: HTTP status code " + response.statusCode();
+        }
+
+        String responseBody = response.body();
+        System.out.println("Full Response Body:");
+        System.out.println(responseBody);
+        
+        System.out.println("\nJSON Structure:");
+        printJsonStructure(responseBody, 0);
+
+        List<FileInfo> files = parseJsonResponse(responseBody);
+
+        System.out.println("\nNumber of files parsed: " + files.size());
+
+        if (files.isEmpty()) {
+            return "No files found in the repository.";
+        }
+
+        FileInfo latestFile = null;
+        Instant latestModified = Instant.EPOCH;
+
+        for (FileInfo file : files) {
+            try {
+                Instant modified = Instant.parse(file.lastModified);
+                if (modified.isAfter(latestModified)) {
+                    latestModified = modified;
+                    latestFile = file;
+                }
+            } catch (Exception e) {
+                System.err.println("Error parsing date for file: " + file.uri + ", date: " + file.lastModified);
+            }
+        }
+
+        return latestFile != null ? extractFileName(latestFile.uri) : "Unable to determine the latest file.";
+    }
+
+    private static void printJsonStructure(String json, int indent) {
+        String indentStr = " ".repeat(indent);
+        Pattern pattern = Pattern.compile("\\{|\\}|\\[|\\]|\"(\\w+)\"\\s*:|\"([^\"]*)\"|\\d+|true|false|null");
+        Matcher matcher = pattern.matcher(json);
+        
+        while (matcher.find()) {
+            String match = matcher.group();
+            if (match.equals("{") || match.equals("[")) {
+                System.out.println(indentStr + match);
+                indent += 2;
+                indentStr = " ".repeat(indent);
+            } else if (match.equals("}") || match.equals("]")) {
+                indent -= 2;
+                indentStr = " ".repeat(indent);
+                System.out.println(indentStr + match);
+            } else if (matcher.group(1) != null) {
+                System.out.println(indentStr + "\"" + matcher.group(1) + "\": ");
+            } else {
+                System.out.println(indentStr + match);
+            }
+        }
+    }
+
+    private static List<FileInfo> parseJsonResponse(String json) {
+        List<FileInfo> files = new ArrayList<>();
+        try {
+            // Try to find any object with "uri" and "lastModified"
+            Pattern filePattern = Pattern.compile("\\{[^{}]*\"uri\"[^{}]*\"lastModified\"[^{}]*\\}");
+            Matcher fileMatcher = filePattern.matcher(json);
+
+            while (fileMatcher.find()) {
+                String fileJson = fileMatcher.group();
+                System.out.println("Found file JSON: " + fileJson);
+                FileInfo fileInfo = parseFileInfo(fileJson);
+                if (fileInfo != null) {
+                    files.add(fileInfo);
+                    System.out.println("Added file: " + fileInfo.uri);
+                }
+            }
+
+            if (files.isEmpty()) {
+                System.out.println("No files found using standard parsing. Attempting alternative parsing...");
+                // If no files found, try to extract all key-value pairs
+                Pattern kvPattern = Pattern.compile("\"(\\w+)\"\\s*:\\s*(\"[^\"]*\"|\\d+|true|false|null|\\{[^{}]*\\}|\\[[^\\[\\]]*\\])");
+                Matcher kvMatcher = kvPattern.matcher(json);
+                while (kvMatcher.find()) {
+                    System.out.println("Found key-value pair: " + kvMatcher.group(1) + " = " + kvMatcher.group(2));
+                }
+            }
+        } catch (Exception e) {
+            System.err.println("Error parsing JSON response: " + e.getMessage());
+            e.printStackTrace();
+        }
+        return files;
+    }
+
+    private static FileInfo parseFileInfo(String fileJson) {
+        String uri = extractValue(fileJson, "uri");
+        String lastModified = extractValue(fileJson, "lastModified");
+        
+        if (uri != null && lastModified != null) {
+            return new FileInfo(uri, lastModified);
+        }
+        System.err.println("Could not parse file info from: " + fileJson);
+        return null;
+    }
+
+    private static String extractValue(String json, String key) {
+        Pattern pattern = Pattern.compile("\"" + key + "\"\\s*:\\s*(\"[^\"]*\"|\\d+|true|false|null)");
+        Matcher matcher = pattern.matcher(json);
+        if (matcher.find()) {
+            String value = matcher.group(1);
+            if (value.startsWith("\"") && value.endsWith("\"")) {
+                return value.substring(1, value.length() - 1);
+            }
+            return value;
+        }
+        return null;
+    }
+
+    private static String extractFileName(String uri) {
+        int lastSlashIndex = uri.lastIndexOf('/');
+        return lastSlashIndex != -1 ? uri.substring(lastSlashIndex + 1) : uri;
+    }
+
+    private static class FileInfo {
+        String uri;
+        String lastModified;
+
+        FileInfo(String uri, String lastModified) {
+            this.uri = uri;
+            this.lastModified = lastModified;
+        }
+    }
+
+    public static void main(String[] args) {
+        String repoUrl = "https://your-artifactory-url/artifactory";
+        String repoKey = "your-repo-key";
+        String token = "your-access-token";
+
+        try {
+            String latestFileName = getLatestModifiedFileName(repoUrl, repoKey, token);
+            System.out.println("Latest modified file name: " + latestFileName);
+        } catch (IOException | InterruptedException e) {
+            e.printStackTrace();
+        }
+    }
+}
