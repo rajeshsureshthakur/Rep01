@@ -1,0 +1,30 @@
+#include <vector>
+#include <algorithm>
+#include <utility>
+
+using namespace std;
+
+vector<int> solution(vector<int> &A) {
+    int N = A.size();
+    vector<pair<int, int>> indexed_A(N);
+    
+    // Create a vector of pairs (height, index) to track the original index
+    for (int i = 0; i < N; i++) {
+        indexed_A[i] = {A[i], i};
+    }
+    
+    // Sort based on the heights in non-decreasing order
+    sort(indexed_A.begin(), indexed_A.end());
+    
+    // This will store the final heights of skyscrapers
+    vector<int> B(N);
+    
+    // Assign unique heights starting from 1
+    int current_height = 1;
+    for (int i = 0; i < N; i++) {
+        B[indexed_A[i].second] = current_height;
+        current_height++;
+    }
+    
+    return B;
+}
