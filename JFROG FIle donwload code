@@ -1,0 +1,53 @@
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.util.Base64;
+
+public class JFrogFileDownloader {
+    private static final String ARTIFACTORY_URL = "https://your-instance.jfrog.io/artifactory";
+    private static final String REPO_NAME = "your-repo-name";
+    private static final String FILE_PATH = "path/to/your/file.ext";
+    private static final String USERNAME = "your-username";
+    private static final String API_KEY = "your-api-key";
+    private static final String OUTPUT_FILE = "downloaded-file.ext";
+
+    public static void main(String[] args) {
+        String fileUrl = ARTIFACTORY_URL + "/" + REPO_NAME + "/" + FILE_PATH;
+        
+        try {
+            URL url = new URL(fileUrl);
+            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+            
+            // Set up basic authentication
+            String auth = USERNAME + ":" + API_KEY;
+            String encodedAuth = Base64.getEncoder().encodeToString(auth.getBytes());
+            conn.setRequestProperty("Authorization", "Basic " + encodedAuth);
+            
+            conn.setRequestMethod("GET");
+            
+            int responseCode = conn.getResponseCode();
+            if (responseCode == HttpURLConnection.HTTP_OK) {
+                // Get the input stream
+                try (InputStream inputStream = conn.getInputStream();
+                     FileOutputStream outputStream = new FileOutputStream(OUTPUT_FILE)) {
+                    
+                    byte[] buffer = new byte[4096];
+                    int bytesRead;
+                    while ((bytesRead = inputStream.read(buffer)) != -1) {
+                        outputStream.write(buffer, 0, bytesRead);
+                    }
+                    
+                    System.out.println("File downloaded successfully: " + OUTPUT_FILE);
+                }
+            } else {
+                System.out.println("Failed to download file. Response Code: " + responseCode);
+            }
+            
+        } catch (IOException e) {
+            System.err.println("An error occurred while downloading the file: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+}
