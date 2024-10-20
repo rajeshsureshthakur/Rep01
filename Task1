@@ -75,3 +75,55 @@ int main() {
 
     return 0;
 }
+
+
+
+
+
+
+
+
+
+public class LetterMatcher {
+
+    public static int solution(String letters) {
+        int n = letters.length();
+        int[] upp = new int[26];
+        int[] low = new int[26];
+
+        // Initialize the arrays
+        for (int i = 0; i < 26; i++) {
+            upp[i] = -1;   // For upper case, -1 indicates not found
+            low[i] = Integer.MAX_VALUE; // For lower case, MAX_VALUE indicates not found
+        }
+
+        // Populate the arrays with the first occurrence indices
+        for (int i = 0; i < n; i++) {
+            char ch = letters.charAt(i);
+            if (Character.isUpperCase(ch) && upp[ch - 'A'] == -1) {
+                upp[ch - 'A'] = i; // Store index of first occurrence of uppercase
+            }
+            if (Character.isLowerCase(ch)) {
+                low[ch - 'a'] = i; // Store index of first occurrence of lowercase
+            }
+        }
+
+        int ans = 0;
+
+        // Count the number of characters where the uppercase comes after the lowercase
+        for (int i = 0; i < 26; i++) {
+            if (upp[i] > low[i]) {
+                ans++;
+            }
+        }
+
+        return ans; // Return the count
+    }
+
+    public static void main(String[] args) {
+        String test = "aAbBcCdDeEfFgG";
+        int result = solution(test);
+        System.out.println(result); // Output the result
+    }
+}
+
