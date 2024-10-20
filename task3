@@ -1,0 +1,42 @@
+#include <vector>
+#include <cstring>
+
+using namespace std;
+
+// Function to perform DFS and try to match patients to their preferred slots
+bool tryMatch(int patient, const vector<vector<int>>& graph, vector<int>& match, vector<bool>& visited) {
+    for (int slot : graph[patient]) {
+        if (visited[slot]) continue;  // Slot already visited
+        visited[slot] = true;
+        
+        // If slot is not matched or we can find an alternate slot for the currently matched patient
+        if (match[slot] == -1 || tryMatch(match[slot], graph, match, visited)) {
+            match[slot] = patient;  // Assign the patient to this slot
+            return true;
+        }
+    }
+    return false;
+}
+
+bool solution(vector<int>& A, vector<int>& B, int S) {
+    int N = A.size();
+    
+    // Create a bipartite graph where each patient points to their preferred slots
+    vector<vector<int>> graph(N);
+    for (int i = 0; i < N; i++) {
+        graph[i].push_back(A[i] - 1);  // Slot A[i]
+        graph[i].push_back(B[i] - 1);  // Slot B[i]
+    }
+    
+    // Array to store which patient is assigned to which slot
+    vector<int> match(S, -1);  // match[slot] = patient
+    for (int patient = 0; patient < N; patient++) {
+        // Try to find a slot for this patient using DFS
+        vector<bool> visited(S, false);  // Track visited slots during DFS
+        if (!tryMatch(patient, graph, match, visited)) {
+            return false;  // If we can't assign this patient, return false
+        }
+    }
+    
+    return true;  // If we assigned all patients, return true
+}
