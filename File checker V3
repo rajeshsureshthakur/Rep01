@@ -1,0 +1,101 @@
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.time.Duration;
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.Base64;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+public class JFrogFileChecker {
+    private static final String ARTIFACTORY_URL = "https://your-instance.jfrog.io/artifactory";
+    private static final String REPO_NAME = "your-repo-name";
+    private static final String FOLDER_PATH = "path/to/your/folder";
+    private static final String USERNAME = "your-username";
+    private static final String API_KEY = "your-api-key";
+
+    private static final HttpClient httpClient = HttpClient.newBuilder()
+            .connectTimeout(Duration.ofSeconds(10))
+            .build();
+
+    public static void main(String[] args) {
+        try {
+            long systemTimestamp = System.currentTimeMillis();
+            
+            String apiUrl = ARTIFACTORY_URL + "/api/storage/" + REPO_NAME + "/" + FOLDER_PATH;
+            String response = sendGetRequest(apiUrl);
+
+            Pattern pattern = Pattern.compile("\"uri\":\"([^\"]+)\",\"folder\":(false)");
+            Matcher matcher = pattern.matcher(response);
+
+            String latestFile = "";
+            
+            // Fixed timestamp as requested
+            String fixedTimestamp = "24-10-16 18:30:26 +0530";
+            ZonedDateTime zonedDateTime = ZonedDateTime.parse(fixedTimestamp, 
+                DateTimeFormatter.ofPattern("yy-MM-dd HH:mm:ss Z"));
+            long latestTimestamp = zonedDateTime.toInstant().toEpochMilli();
+
+            while (matcher.find()) {
+                String uri = matcher.group(1);
+                latestFile = uri;
+                // We're not checking for the latest file anymore, just using the first file found
+                break;
+            }
+
+            if (!latestFile.isEmpty()) {
+                System.out.println("System time: " + formatTimestamp(systemTimestamp));
+                System.out.println("File found: " + latestFile);
+                System.out.println("Last modified (fixed): " + fixedTimestamp);
+                System.out.println("Time difference: " + formatDuration(systemTimestamp - latestTimestamp));
+            } else {
+                System.out.println("No files found in the specified folder.");
+            }
+
+        } catch (Exception e) {
+            System.err.println("An error occurred: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+
+    private static String sendGetRequest(String url) throws Exception {
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create(url))
+                .header("Authorization", "Basic " + getEncodedCredentials())
+                .GET()
+                .build();
+
+        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+
+        if (response.statusCode() != 200) {
+            throw new RuntimeException("HTTP error code: " + response.statusCode());
+        }
+
+        return response.body();
+    }
+
+    private static String getEncodedCredentials() {
+        return Base64.getEncoder().encodeToString((USERNAME + ":" + API_KEY).getBytes());
+    }
+
+    private static String formatTimestamp(long timestamp) {
+        Instant instant = Instant.ofEpochMilli(timestamp);
+        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yy-MM-dd HH:mm:ss Z")
+                .withZone(ZoneId.systemDefault());
+        return formatter.format(instant);
+    }
+
+    private static String formatDuration(long milliseconds) {
+        long seconds = milliseconds / 1000;
+        long minutes = seconds / 60;
+        long hours = minutes / 60;
+        long days = hours / 24;
+
+        return String.format("%d days, %d hours, %d minutes, %d seconds",
+                days, hours % 24, minutes % 60, seconds % 60);
+    }
+}
