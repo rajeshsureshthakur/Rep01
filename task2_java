@@ -1,0 +1,58 @@
+import java.util.ArrayList;
+import java.util.List;
+
+public class PatientSlotMatcher {
+    
+    // Function to perform DFS and try to match patients to their preferred slots
+    private boolean tryMatch(int patient, List<List<Integer>> graph, int[] match, boolean[] visited) {
+        for (int slot : graph.get(patient)) {
+            if (visited[slot]) continue;  // Skip already visited slots
+            visited[slot] = true;  // Mark slot as visited
+            
+            // If the slot is not matched or we can reassign the currently matched patient
+            if (match[slot] == -1 || tryMatch(match[slot], graph, match, visited)) {
+                match[slot] = patient;  // Assign the patient to this slot
+                return true;
+            }
+        }
+        return false;  // No slot found for this patient
+    }
+
+    public boolean solution(int[] A, int[] B, int S) {
+        int N = A.length;
+
+        // Create a bipartite graph where each patient points to their preferred slots
+        List<List<Integer>> graph = new ArrayList<>();
+        for (int i = 0; i < N; i++) {
+            graph.add(new ArrayList<>());
+            graph.get(i).add(A[i] - 1);  // Slot A[i]
+            graph.get(i).add(B[i] - 1);  // Slot B[i]
+        }
+
+        // Array to store which patient is assigned to which slot
+        int[] match = new int[S];  // match[slot] = patient
+        for (int i = 0; i < S; i++) {
+            match[i] = -1;  // Initialize all slots as unmatched
+        }
+        
+        for (int patient = 0; patient < N; patient++) {
+            // Try to find a slot for this patient using DFS
+            boolean[] visited = new boolean[S];  // Track visited slots during DFS
+            if (!tryMatch(patient, graph, match, visited)) {
+                return false;  // Unable to assign this patient
+            }
+        }
+
+        return true;  // All patients assigned successfully
+    }
+
+    public static void main(String[] args) {
+        PatientSlotMatcher matcher = new PatientSlotMatcher();
+        int[] A = {1, 2, 3};
+        int[] B = {2, 3, 1};
+        int S = 3;
+
+        boolean result = matcher.solution(A, B, S);
+        System.out.println(result);  // Output: true or false based on the matching
+    }
+}
