@@ -1,0 +1,95 @@
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.util.Base64;
+import org.json.JSONArray;
+import org.json.JSONObject;
+
+public class JFrogLatestFileChecker {
+    private static final String ARTIFACTORY_URL = "https://your-instance.jfrog.io/artifactory";
+    private static final String REPO_NAME = "your-repo-name";
+    private static final String FOLDER_PATH = "path/to/your/folder";
+    private static final String USERNAME = "your-username";
+    private static final String API_KEY = "your-api-key";
+
+    public static void main(String[] args) {
+        try {
+            String apiUrl = ARTIFACTORY_URL + "/api/storage/" + REPO_NAME + "/" + FOLDER_PATH;
+            URL url = new URL(apiUrl);
+            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+            
+            // Set up basic authentication
+            String auth = USERNAME + ":" + API_KEY;
+            String encodedAuth = Base64.getEncoder().encodeToString(auth.getBytes());
+            conn.setRequestProperty("Authorization", "Basic " + encodedAuth);
+            
+            conn.setRequestMethod("GET");
+            
+            int responseCode = conn.getResponseCode();
+            if (responseCode == HttpURLConnection.HTTP_OK) {
+                BufferedReader in = new BufferedReader(new InputStreamReader(conn.getInputStream()));
+                String inputLine;
+                StringBuilder response = new StringBuilder();
+                while ((inputLine = in.readLine()) != null) {
+                    response.append(inputLine);
+                }
+                in.close();
+                
+                // Parse JSON response
+                JSONObject jsonResponse = new JSONObject(response.toString());
+                JSONArray children = jsonResponse.getJSONArray("children");
+                
+                String latestFile = "";
+                long latestTimestamp = 0;
+                
+                for (int i = 0; i < children.length(); i++) {
+                    JSONObject child = children.getJSONObject(i);
+                    String uri = child.getString("uri");
+                    if (child.getString("folder").equals("false")) {
+                        String fileUrl = ARTIFACTORY_URL + "/api/storage/" + REPO_NAME + FOLDER_PATH + uri;
+                        JSONObject fileInfo = getFileInfo(fileUrl);
+                        long lastModified = fileInfo.getLong("lastModified");
+                        if (lastModified > latestTimestamp) {
+                            latestTimestamp = lastModified;
+                            latestFile = uri;
+                        }
+                    }
+                }
+                
+                if (!latestFile.isEmpty()) {
+                    System.out.println("Latest file: " + latestFile);
+                    System.out.println("Last modified: " + new java.util.Date(latestTimestamp));
+                } else {
+                    System.out.println("No files found in the specified folder.");
+                }
+            } else {
+                System.out.println("Failed to fetch repository contents. Response Code: " + responseCode);
+            }
+        } catch (Exception e) {
+            System.err.println("An error occurred: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+    
+    private static JSONObject getFileInfo(String fileUrl) throws Exception {
+        URL url = new URL(fileUrl);
+        HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+        
+        String auth = USERNAME + ":" + API_KEY;
+        String encodedAuth = Base64.getEncoder().encodeToString(auth.getBytes());
+        conn.setRequestProperty("Authorization", "Basic " + encodedAuth);
+        
+        conn.setRequestMethod("GET");
+        
+        BufferedReader in = new BufferedReader(new InputStreamReader(conn.getInputStream()));
+        String inputLine;
+        StringBuilder response = new StringBuilder();
+        while ((inputLine = in.readLine()) != null) {
+            response.append(inputLine);
+        }
+        in.close();
+        
+        return new JSONObject(response.toString());
+    }
+}
