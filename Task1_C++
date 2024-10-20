@@ -32,3 +32,37 @@ int solution (string s) {
 
 #include<bits/stdc++.h>
 using namespace std;
+
+
+
+int solution (string &letters) {
+
+
+      int n = letters.length();
+
+      vector<int> upp(26, -1), low(26, INT_MAX);
+
+      for (int i=0; i<n; i++) {
+        if (isupper(letters[i]) and upp[letters[i]-'A'] == -1) {
+            upp[letters[i]-'A'] = i;
+        }
+        if (islower(letters[i])) low[letters[i]-'a'] = i;
+      }
+
+      int ans = 0;
+
+      for (int i=0; i<26; i++) {
+        if (upp[i] > low[i]) 
+        {
+            ans++;
+        }
+      }
+
+      return ans;
+
+
+
+
+
+}
+
