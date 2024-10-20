@@ -60,3 +60,50 @@ vector<int> solution (vector<int> &A) {
       return ans;
 
 }
+
+
+
+
+
+
+
+
+
+
+
+import java.util.Arrays;
+import java.util.Comparator;
+
+public class Solution {
+    public int[] solution(int[] A) {
+        int n = A.length;
+        int[] ans = new int[n];
+        int[][] vp = new int[n][2];
+
+        // Pair values with their original indices
+        for (int i = 0; i < n; i++) {
+            vp[i][0] = A[i]; // value
+            vp[i][1] = i;    // index
+        }
+
+        // Sort in descending order based on the value
+        Arrays.sort(vp, new Comparator<int[]>() {
+            public int compare(int[] a, int[] b) {
+                return Integer.compare(b[0], a[0]);
+            }
+        });
+
+        int mx = vp[0][0]; // Start with the maximum value
+
+        // Assign adjusted values based on the sorted pairs
+        for (int i = 0; i < n; i++) {
+            int el = vp[i][0]; // Current element
+            int ind = vp[i][1]; // Original index
+            if (mx > el) mx = el; // Update mx if the current element is smaller
+            ans[ind] = mx; // Assign value to the original index
+            mx--; // Decrease mx for the next iteration
+        }
+
+        return ans;
+    }
+}
