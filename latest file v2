@@ -1,0 +1,65 @@
+import java.io.IOException;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
+import javax.json.Json;
+import javax.json.JsonArray;
+import javax.json.JsonObject;
+import javax.json.JsonReader;
+import java.io.StringReader;
+
+public class JFrogLatestFile {
+    public static String getLatestModifiedFile(String repoUrl, String repoKey, String token) throws IOException, InterruptedException {
+        String apiUrl = repoUrl + "/api/storage/" + repoKey + "?list&deep=1&listFolders=0";
+        
+        HttpClient client = HttpClient.newHttpClient();
+        HttpRequest request = HttpRequest.newBuilder()
+            .uri(URI.create(apiUrl))
+            .header("Authorization", "Bearer " + token)
+            .build();
+
+        HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+
+        if (response.statusCode() != 200) {
+            return "Error: HTTP status code " + response.statusCode();
+        }
+
+        JsonReader jsonReader = Json.createReader(new StringReader(response.body()));
+        JsonObject jsonResponse = jsonReader.readObject();
+        JsonArray files = jsonResponse.getJsonArray("files");
+
+        if (files.isEmpty()) {
+            return "No files found in the repository.";
+        }
+
+        JsonObject latestFile = null;
+        Instant latestModified = Instant.EPOCH;
+
+        for (JsonObject file : files.getValuesAs(JsonObject.class)) {
+            Instant modified = Instant.parse(file.getString("lastModified"));
+            if (modified.isAfter(latestModified)) {
+                latestModified = modified;
+                latestFile = file;
+            }
+        }
+
+        return latestFile != null ? latestFile.getString("uri") : "Unable to determine the latest file.";
+    }
+
+    public static void main(String[] args) {
+        String repoUrl = "https://your-artifactory-url/artifactory";
+        String repoKey = "your-repo-key";
+        String token = "your-access-token";
+
+        try {
+            String latestFileName = getLatestModifiedFile(repoUrl, repoKey, token);
+            System.out.println("Latest modified file: " + latestFileName);
+        } catch (IOException | InterruptedException e) {
+            e.printStackTrace();
+        }
+    }
+}
