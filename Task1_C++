@@ -1,0 +1,30 @@
+int solution (string s) {
+
+
+      int n = s.length();
+
+      vector<int> upp(26, -1), low(26, INT_MAX);
+
+      for (int i=0; i<n; i++) {
+        if (isupper(s[i]) and upp[s[i]-'A'] == -1) {
+            upp[s[i]-'A'] = i;
+        }
+        if (islower(s[i])) low[s[i]-'a'] = i;
+      }
+
+      int ans = 0;
+
+      for (int i=0; i<26; i++) {
+        if (upp[i] > low[i]) 
+        {
+            ans++;
+        }
+      }
+
+      return ans;
+
+
+
+
+
+}
