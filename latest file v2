@@ -6,11 +6,8 @@ import java.net.http.HttpResponse;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
-import javax.json.Json;
-import javax.json.JsonArray;
-import javax.json.JsonObject;
-import javax.json.JsonReader;
-import java.io.StringReader;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public class JFrogLatestFile {
     public static String getLatestModifiedFile(String repoUrl, String repoKey, String token) throws IOException, InterruptedException {
@@ -28,26 +25,70 @@ public class JFrogLatestFile {
             return "Error: HTTP status code " + response.statusCode();
         }
 
-        JsonReader jsonReader = Json.createReader(new StringReader(response.body()));
-        JsonObject jsonResponse = jsonReader.readObject();
-        JsonArray files = jsonResponse.getJsonArray("files");
+        String responseBody = response.body();
+        List<FileInfo> files = parseJsonResponse(responseBody);
 
         if (files.isEmpty()) {
             return "No files found in the repository.";
         }
 
-        JsonObject latestFile = null;
+        FileInfo latestFile = null;
         Instant latestModified = Instant.EPOCH;
 
-        for (JsonObject file : files.getValuesAs(JsonObject.class)) {
-            Instant modified = Instant.parse(file.getString("lastModified"));
+        for (FileInfo file : files) {
+            Instant modified = Instant.parse(file.lastModified);
             if (modified.isAfter(latestModified)) {
                 latestModified = modified;
                 latestFile = file;
             }
         }
 
-        return latestFile != null ? latestFile.getString("uri") : "Unable to determine the latest file.";
+        return latestFile != null ? latestFile.uri : "Unable to determine the latest file.";
+    }
+
+    private static List<FileInfo> parseJsonResponse(String json) {
+        List<FileInfo> files = new ArrayList<>();
+        Pattern pattern = Pattern.compile("\\{[^{}]*\\}");
+        Matcher matcher = pattern.matcher(json);
+
+        while (matcher.find()) {
+            String fileJson = matcher.group();
+            FileInfo fileInfo = parseFileInfo(fileJson);
+            if (fileInfo != null) {
+                files.add(fileInfo);
+            }
+        }
+
+        return files;
+    }
+
+    private static FileInfo parseFileInfo(String fileJson) {
+        String uri = extractValue(fileJson, "uri");
+        String lastModified = extractValue(fileJson, "lastModified");
+        
+        if (uri != null && lastModified != null) {
+            return new FileInfo(uri, lastModified);
+        }
+        return null;
+    }
+
+    private static String extractValue(String json, String key) {
+        Pattern pattern = Pattern.compile("\"" + key + "\"\\s*:\\s*\"([^\"]*)\"");
+        Matcher matcher = pattern.matcher(json);
+        if (matcher.find()) {
+            return matcher.group(1);
+        }
+        return null;
+    }
+
+    private static class FileInfo {
+        String uri;
+        String lastModified;
+
+        FileInfo(String uri, String lastModified) {
+            this.uri = uri;
+            this.lastModified = lastModified;
+        }
     }
 
     public static void main(String[] args) {
