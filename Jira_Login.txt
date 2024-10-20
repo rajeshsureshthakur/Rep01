@@ -1,0 +1,83 @@
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.net.URL;
+import java.nio.channels.Channels;
+import java.nio.channels.ReadableByteChannel;
+
+public class FileDownloader {
+    public static void downloadFile(String fileUrl, String outputPath) {
+        try {
+            URL url = new URL(fileUrl);
+            try (InputStream in = url.openStream();
+                 ReadableByteChannel rbc = Channels.newChannel(in);
+                 FileOutputStream fos = new FileOutputStream(outputPath)) {
+                fos.getChannel().transferFrom(rbc, 0, Long.MAX_VALUE);
+                System.out.println("File downloaded successfully to: " + outputPath);
+            }
+        } catch (IOException e) {
+            System.err.println("An error occurred while downloading the file: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+
+    public static void main(String[] args) {
+        String fileUrl = "https://example.com/file-to-download.zip";
+        String outputPath = "downloaded-file.zip";
+        downloadFile(fileUrl, outputPath);
+    }
+}
+
+
+
+
+
+
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.util.Base64;
+
+public class JiraLogin {
+    private static final String JIRA_BASE_URL = "https://your-domain.atlassian.net";
+    private static final String API_PATH = "/rest/api/3/myself";
+    private static final String EMAIL = "your-email@example.com";
+    private static final String API_TOKEN = "your-api-token";
+
+    public static void main(String[] args) {
+        try {
+            URL url = new URL(JIRA_BASE_URL + API_PATH);
+            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+            conn.setRequestMethod("GET");
+            conn.setRequestProperty("Accept", "application/json");
+
+            String auth = EMAIL + ":" + API_TOKEN;
+            String encodedAuth = Base64.getEncoder().encodeToString(auth.getBytes());
+            conn.setRequestProperty("Authorization", "Basic " + encodedAuth);
+
+            int responseCode = conn.getResponseCode();
+            System.out.println("Response Code: " + responseCode);
+
+            if (responseCode == 200) {
+                BufferedReader in = new BufferedReader(new InputStreamReader(conn.getInputStream()));
+                String inputLine;
+                StringBuilder response = new StringBuilder();
+
+                while ((inputLine = in.readLine()) != null) {
+                    response.append(inputLine);
+                }
+                in.close();
+
+                System.out.println("Login successful!");
+                System.out.println("Response: " + response.toString());
+            } else {
+                System.out.println("Login failed. Please check your credentials.");
+            }
+
+        } catch (Exception e) {
+            System.out.println("An error occurred: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+}
