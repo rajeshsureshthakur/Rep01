@@ -1,0 +1,159 @@
+import java.io.IOException;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.nio.file.Files;
+import java.nio.file.Paths;
+import java.nio.file.StandardOpenOption;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+public class JFrogLatestFile {
+    private static final String CSV_FILE_PATH = "latest_file.csv";
+
+    public static String getLatestModifiedFileName(String repoUrl, String repoKey, String token) throws IOException, InterruptedException {
+        String apiUrl = repoUrl + "/api/storage/" + repoKey + "?list&deep=1&listFolders=0";
+        
+        HttpClient client = HttpClient.newHttpClient();
+        HttpRequest request = HttpRequest.newBuilder()
+            .uri(URI.create(apiUrl))
+            .header("Authorization", "Bearer " + token)
+            .build();
+
+        HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+
+        if (response.statusCode() != 200) {
+            return "Error: HTTP status code " + response.statusCode();
+        }
+
+        String responseBody = response.body();
+        System.out.println("Response body: " + responseBody);
+
+        List<FileInfo> files = parseJsonResponse(responseBody);
+
+        System.out.println("Number of files parsed: " + files.size());
+
+        if (files.isEmpty()) {
+            return "No files found in the repository.";
+        }
+
+        FileInfo latestFile = null;
+        long latestModified = 0;
+
+        for (FileInfo file : files) {
+            try {
+                long modified = Long.parseLong(file.lastModified);
+                if (modified > latestModified) {
+                    latestModified = modified;
+                    latestFile = file;
+                }
+            } catch (NumberFormatException e) {
+                System.err.println("Error parsing date for file: " + file.name + ", date: " + file.lastModified);
+            }
+        }
+
+        if (latestFile != null) {
+            compareAndUpdateCSV(latestFile);
+        }
+
+        return latestFile != null ? latestFile.name : "Unable to determine the latest file.";
+    }
+
+    private static void compareAndUpdateCSV(FileInfo latestFile) throws IOException {
+        String savedFileName = "";
+        if (Files.exists(Paths.get(CSV_FILE_PATH))) {
+            savedFileName = Files.readString(Paths.get(CSV_FILE_PATH)).trim();
+        }
+
+        if (!savedFileName.equals(latestFile.name)) {
+            Files.writeString(
+                Paths.get(CSV_FILE_PATH), 
+                latestFile.name + System.lineSeparator(), 
+                StandardOpenOption.CREATE, 
+                StandardOpenOption.TRUNCATE_EXISTING
+            );
+            System.out.println("CSV updated with new latest file: " + latestFile.name);
+        } else {
+            System.out.println("CSV not updated. Latest file is still: " + savedFileName);
+        }
+    }
+
+    private static List<FileInfo> parseJsonResponse(String json) {
+        List<FileInfo> files = new ArrayList<>();
+        try {
+            Pattern childrenPattern = Pattern.compile("\"children\"\\s*:\\s*(\\[.*?\\])\\s*[,}]", Pattern.DOTALL);
+            Matcher childrenMatcher = childrenPattern.matcher(json);
+            
+            if (childrenMatcher.find()) {
+                String childrenJson = childrenMatcher.group(1);
+                Pattern filePattern = Pattern.compile("\\{[^{}]*\\}");
+                Matcher fileMatcher = filePattern.matcher(childrenJson);
+
+                while (fileMatcher.find()) {
+                    String fileJson = fileMatcher.group();
+                    FileInfo fileInfo = parseFileInfo(fileJson);
+                    if (fileInfo != null) {
+                        files.add(fileInfo);
+                        System.out.println("Added file: " + fileInfo.name);
+                    }
+                }
+            } else {
+                System.out.println("Could not find 'children' array in JSON response");
+            }
+        } catch (Exception e) {
+            System.err.println("Error parsing JSON response: " + e.getMessage());
+            e.printStackTrace();
+        }
+        return files;
+    }
+
+    private static FileInfo parseFileInfo(String fileJson) {
+        String name = extractValue(fileJson, "name");
+        String lastModified = extractValue(fileJson, "lastModified");
+        
+        if (name != null && lastModified != null) {
+            return new FileInfo(name, lastModified);
+        }
+        System.err.println("Could not parse file info from: " + fileJson);
+        return null;
+    }
+
+    private static String extractValue(String json, String key) {
+        Pattern pattern = Pattern.compile("\"" + key + "\"\\s*:\\s*(\"[^\"]*\"|\\d+)");
+        Matcher matcher = pattern.matcher(json);
+        if (matcher.find()) {
+            String value = matcher.group(1);
+            if (value.startsWith("\"") && value.endsWith("\"")) {
+                return value.substring(1, value.length() - 1);
+            }
+            return value;
+        }
+        return null;
+    }
+
+    private static class FileInfo {
+        String name;
+        String lastModified;
+
+        FileInfo(String name, String lastModified) {
+            this.name = name;
+            this.lastModified = lastModified;
+        }
+    }
+
+    public static void main(String[] args) {
+        String repoUrl = "https://your-artifactory-url/artifactory";
+        String repoKey = "your-repo-key";
+        String token = "your-access-token";
+
+        try {
+            String latestFileName = getLatestModifiedFileName(repoUrl, repoKey, token);
+            System.out.println("Latest modified file name: " + latestFileName);
+        } catch (IOException | InterruptedException e) {
+            e.printStackTrace();
+        }
+    }
+}
