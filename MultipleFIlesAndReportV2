@@ -1,0 +1,195 @@
+import java.io.IOException;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.nio.file.Files;
+import java.nio.file.Paths;
+import java.nio.file.StandardOpenOption;
+import java.util.*;
+import java.util.concurrent.TimeUnit;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+public class JFrogLatestFile {
+    private static final long CHECK_INTERVAL_SECONDS = 60; // Check every 60 seconds
+    private static final String CSV_FILE_PATH = "latest_files.csv";
+
+    public static void main(String[] args) {
+        String baseUrl = "https://your-artifactory-url/artifactory";
+        String token = "your-access-token";
+
+        List<String> repoKeys = Arrays.asList("repo1-key", "repo2-key"); // Add more repo keys as needed
+
+        for (String repoKey : repoKeys) {
+            Thread repoThread = new Thread(() -> 
+                continuouslyCheckLatestFiles(baseUrl, repoKey, token)
+            );
+            repoThread.start();
+        }
+    }
+
+    public static void continuouslyCheckLatestFiles(String repoUrl, String repoKey, String token) {
+        while (true) {
+            try {
+                List<FileInfo> latestFiles = getLatestModifiedFiles(repoUrl, repoKey, token);
+                if (!latestFiles.isEmpty()) {
+                    updateCSV(latestFiles, repoKey);
+                }
+                System.out.println("[" + repoKey + "] Waiting for " + CHECK_INTERVAL_SECONDS + " seconds before next check...");
+                TimeUnit.SECONDS.sleep(CHECK_INTERVAL_SECONDS);
+            } catch (IOException | InterruptedException e) {
+                System.err.println("[" + repoKey + "] Error during check: " + e.getMessage());
+                e.printStackTrace();
+            }
+        }
+    }
+
+    private static List<FileInfo> getLatestModifiedFiles(String repoUrl, String repoKey, String token) throws IOException, InterruptedException {
+        String apiUrl = repoUrl + "/api/storage/" + repoKey + "?list&deep=1&listFolders=0";
+        
+        HttpClient client = HttpClient.newHttpClient();
+        HttpRequest request = HttpRequest.newBuilder()
+            .uri(URI.create(apiUrl))
+            .header("Authorization", "Bearer " + token)
+            .build();
+
+        HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+
+        if (response.statusCode() != 200) {
+            System.err.println("[" + repoKey + "] Error: HTTP status code " + response.statusCode());
+            return new ArrayList<>();
+        }
+
+        String responseBody = response.body();
+        System.out.println("[" + repoKey + "] Response body: " + responseBody);
+        return parseJsonResponse(responseBody, repoKey);
+    }
+
+    private static synchronized void updateCSV(List<FileInfo> newFiles, String repoKey) throws IOException {
+        Map<String, String> currentEntries = new HashMap<>();
+        if (Files.exists(Paths.get(CSV_FILE_PATH))) {
+            List<String> lines = Files.readAllLines(Paths.get(CSV_FILE_PATH));
+            for (String line : lines) {
+                String[] parts = line.split(",");
+                if (parts.length == 4) {
+                    currentEntries.put(parts[0], line);
+                }
+            }
+        }
+
+        Map<String, FileInfo> latestFiles = new HashMap<>();
+        for (FileInfo file : newFiles) {
+            String baseName = getBaseName(file.name);
+            if (!latestFiles.containsKey(baseName) || 
+                Long.parseLong(file.lastModified) > Long.parseLong(latestFiles.get(baseName).lastModified)) {
+                latestFiles.put(baseName, file);
+            }
+        }
+
+        boolean updated = false;
+        for (Map.Entry<String, FileInfo> entry : latestFiles.entrySet()) {
+            String baseName = entry.getKey();
+            FileInfo file = entry.getValue();
+            String newEntry = String.join(",", baseName, file.lastModified, repoKey, file.path);
+            if (!currentEntries.containsKey(baseName) || 
+                Long.parseLong(file.lastModified) > Long.parseLong(currentEntries.get(baseName).split(",")[1])) {
+                currentEntries.put(baseName, newEntry);
+                updated = true;
+                printLatestFileName(baseName, repoKey, file.path);
+            }
+        }
+
+        if (updated) {
+            List<String> updatedLines = new ArrayList<>(currentEntries.values());
+            Files.write(Paths.get(CSV_FILE_PATH), updatedLines, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
+            System.out.println("[" + repoKey + "] CSV updated with new latest files.");
+        } else {
+            System.out.println("[" + repoKey + "] No updates needed. All files are up to date.");
+        }
+    }
+
+    private static String getBaseName(String fileName) {
+        int underscoreIndex = fileName.lastIndexOf('_');
+        if (underscoreIndex > 0) {
+            return fileName.substring(0, underscoreIndex) + fileName.substring(fileName.lastIndexOf('.'));
+        }
+        return fileName;
+    }
+
+    private static void printLatestFileName(String baseName, String repoKey, String filePath) {
+        System.out.println("===========================================");
+        System.out.println("LATEST FILE FOUND IN REPOSITORY: " + repoKey);
+        System.out.println("BASE FILE NAME: " + baseName);
+        System.out.println("FULL FILE PATH: " + filePath);
+        System.out.println("===========================================");
+    }
+
+    private static List<FileInfo> parseJsonResponse(String json, String repoKey) {
+        List<FileInfo> files = new ArrayList<>();
+        try {
+            Pattern filePattern = Pattern.compile("\\{[^{}]*\\}");
+            Matcher fileMatcher = filePattern.matcher(json);
+
+            while (fileMatcher.find()) {
+                String fileJson = fileMatcher.group();
+                FileInfo fileInfo = parseFileInfo(fileJson, repoKey);
+                if (fileInfo != null) {
+                    files.add(fileInfo);
+                }
+            }
+        } catch (Exception e) {
+            System.err.println("[" + repoKey + "] Error parsing JSON response: " + e.getMessage());
+            e.printStackTrace();
+        }
+        return files;
+    }
+
+    private static FileInfo parseFileInfo(String fileJson, String repoKey) {
+        try {
+            String name = extractValue(fileJson, "name");
+            String lastModified = extractValue(fileJson, "LastModified"); // Note the capital 'L'
+            String path = extractValue(fileJson, "uri");
+            
+            if (name == null || lastModified == null) {
+                System.err.println("[" + repoKey + "] Missing required fields. Name: " + name + ", LastModified: " + lastModified);
+                return null;
+            }
+            
+            // If path is null, use the name as the path
+            path = (path != null) ? path : name;
+
+            return new FileInfo(name, lastModified, path);
+        } catch (Exception e) {
+            System.err.println("[" + repoKey + "] Error parsing file info: " + e.getMessage());
+            System.err.println("[" + repoKey + "] Problematic JSON: " + fileJson);
+            e.printStackTrace();
+        }
+        return null;
+    }
+
+    private static String extractValue(String json, String key) {
+        Pattern pattern = Pattern.compile("\"" + key + "\"\\s*:\\s*(\"[^\"]*\"|\\d+)");
+        Matcher matcher = pattern.matcher(json);
+        if (matcher.find()) {
+            String value = matcher.group(1);
+            if (value.startsWith("\"") && value.endsWith("\"")) {
+                return value.substring(1, value.length() - 1);
+            }
+            return value;
+        }
+        return null;
+    }
+
+    private static class FileInfo {
+        String name;
+        String lastModified;
+        String path;
+
+        FileInfo(String name, String lastModified, String path) {
+            this.name = name;
+            this.lastModified = lastModified;
+            this.path = path;
+        }
+    }
+}
