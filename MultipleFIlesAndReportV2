@@ -193,3 +193,159 @@ public class JFrogLatestFile {
         }
     }
 }
+
+
+
+
+
+
+
+
+
+
+
+
+import java.io.IOException;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.nio.file.Files;
+import java.nio.file.Paths;
+import java.nio.file.StandardOpenOption;
+import java.util.*;
+import java.util.concurrent.TimeUnit;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+public class JFrogLatestFile {
+    private static final long CHECK_INTERVAL_SECONDS = 60; // Check every 60 seconds
+    private static final String CSV_FILE_PATH = "latest_files.csv";
+    private static final String VBS_SCRIPT_PATH = "reports.vbs"; // Path to your VBS script
+
+    public static void main(String[] args) {
+        String baseUrl = "https://your-artifactory-url/artifactory";
+        String token = "your-access-token";
+
+        List<String> repoKeys = Arrays.asList("repo1-key", "repo2-key"); // Add more repo keys as needed
+
+        for (String repoKey : repoKeys) {
+            Thread repoThread = new Thread(() -> 
+                continuouslyCheckLatestFiles(baseUrl, repoKey, token)
+            );
+            repoThread.start();
+        }
+    }
+
+    public static void continuouslyCheckLatestFiles(String repoUrl, String repoKey, String token) {
+        while (true) {
+            try {
+                List<FileInfo> latestFiles = getLatestModifiedFiles(repoUrl, repoKey, token);
+                if (!latestFiles.isEmpty()) {
+                    boolean updated = updateCSV(latestFiles, repoKey);
+                    if (updated) {
+                        executeVBSScript();
+                    }
+                }
+                System.out.println("[" + repoKey + "] Waiting for " + CHECK_INTERVAL_SECONDS + " seconds before next check...");
+                TimeUnit.SECONDS.sleep(CHECK_INTERVAL_SECONDS);
+            } catch (IOException | InterruptedException e) {
+                System.err.println("[" + repoKey + "] Error during check: " + e.getMessage());
+                e.printStackTrace();
+            }
+        }
+    }
+
+    private static List<FileInfo> getLatestModifiedFiles(String repoUrl, String repoKey, String token) throws IOException, InterruptedException {
+        // ... (rest of the method remains unchanged)
+    }
+
+    private static synchronized boolean updateCSV(List<FileInfo> newFiles, String repoKey) throws IOException {
+        Map<String, String> currentEntries = new HashMap<>();
+        if (Files.exists(Paths.get(CSV_FILE_PATH))) {
+            List<String> lines = Files.readAllLines(Paths.get(CSV_FILE_PATH));
+            for (String line : lines) {
+                String[] parts = line.split(",");
+                if (parts.length == 4) {
+                    currentEntries.put(parts[0], line);
+                }
+            }
+        }
+
+        Map<String, FileInfo> latestFiles = new HashMap<>();
+        for (FileInfo file : newFiles) {
+            String baseName = getBaseName(file.name);
+            if (!latestFiles.containsKey(baseName) || 
+                Long.parseLong(file.lastModified) > Long.parseLong(latestFiles.get(baseName).lastModified)) {
+                latestFiles.put(baseName, file);
+            }
+        }
+
+        boolean updated = false;
+        for (Map.Entry<String, FileInfo> entry : latestFiles.entrySet()) {
+            String baseName = entry.getKey();
+            FileInfo file = entry.getValue();
+            String newEntry = String.join(",", baseName, file.lastModified, repoKey, file.path);
+            if (!currentEntries.containsKey(baseName) || 
+                Long.parseLong(file.lastModified) > Long.parseLong(currentEntries.get(baseName).split(",")[1])) {
+                currentEntries.put(baseName, newEntry);
+                updated = true;
+                printLatestFileName(baseName, repoKey, file.path);
+            }
+        }
+
+        if (updated) {
+            List<String> updatedLines = new ArrayList<>(currentEntries.values());
+            Files.write(Paths.get(CSV_FILE_PATH), updatedLines, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
+            System.out.println("[" + repoKey + "] CSV updated with new latest files.");
+        } else {
+            System.out.println("[" + repoKey + "] No updates needed. All files are up to date.");
+        }
+
+        return updated;
+    }
+
+    private static void executeVBSScript() {
+        try {
+            System.out.println("Executing reports.vbs script...");
+            Process process = Runtime.getRuntime().exec("cscript " + VBS_SCRIPT_PATH);
+            int exitCode = process.waitFor();
+            if (exitCode == 0) {
+                System.out.println("VBS script executed successfully.");
+            } else {
+                System.err.println("VBS script execution failed with exit code: " + exitCode);
+            }
+        } catch (IOException | InterruptedException e) {
+            System.err.println("Error executing VBS script: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+
+    private static String getBaseName(String fileName) {
+        int underscoreIndex = fileName.lastIndexOf('_');
+        if (underscoreIndex > 0) {
+            return fileName.substring(0, underscoreIndex) + fileName.substring(fileName.lastIndexOf('.'));
+        }
+        return fileName;
+    }
+
+    private static void printLatestFileName(String baseName, String repoKey, String filePath) {
+        // ... (rest of the method remains unchanged)
+    }
+
+    private static List<FileInfo> parseJsonResponse(String json, String repoKey) {
+        // ... (rest of the method remains unchanged)
+    }
+
+    private static FileInfo parseFileInfo(String fileJson, String repoKey) {
+        // ... (rest of the method remains unchanged)
+    }
+
+    private static String extractValue(String json, String key) {
+        // ... (rest of the method remains unchanged)
+    }
+
+    private static class FileInfo {
+        // ... (rest of the class remains unchanged)
+    }
+}
